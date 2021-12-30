@@ -1,0 +1,1633 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+
+This is an [R Markdown](http://rmarkdown.rstudio.com) Notebook. When you execute code within the notebook, the results appear beneath the code. 
+
+Try executing this chunk by clicking the *Run* button within the chunk or by placing your cursor inside it and pressing *Ctrl+Shift+Enter*. 
+
+
+
+```{r}
+rm( list=ls() )
+gc()
+```
+
+```{r}
+library(data.table)
+library(ggplot2)
+```
+
+```{r}
+df = fread('loan.csv')
+head(df)
+```
+
+```{r}
+paste(nrow(df),"filas")
+paste(ncol(df),"columnas")
+```
+
+
+```{r}
+unique(df$loan_status)
+```
+
+
+
+# Feature Selection
+
+
+# Preprocesamiento
+```{r}
+unique(df$emp_length)
+df$emp_length_num = fcase(
+  df$emp_length == "< 1 year" ,0,
+  df$emp_length == "1 year" ,1,
+  df$emp_length == "2 years" ,2,
+  df$emp_length == "3 years" ,3,
+  df$emp_length == "4 years" ,4,
+  df$emp_length == "5 years" ,5,
+  df$emp_length == "6 years" ,6,
+  df$emp_length == "7 years" ,7,
+  df$emp_length == "8 years" ,8,
+  df$emp_length == "9 years" ,9,
+  df$emp_length == "10+ years" ,10,
+  df$emp_length == "n/a", -1)
+df[df$emp_length_num==-1]$emp_length_num <- NA
+unique(df$emp_length_num)
+
+```
+
+
+
+```{r}
+df[,target := ifelse((loan_status=="Charged Off")|(loan_status=="Default")|(loan_status=="*Charged off"), 1, 0)]
+unique(df$target)
+```
+
+```{r}
+unique(df$grade)
+df$grade_num = fcase(
+  df$grade == "A" ,1,
+  df$grade == "B" ,2,
+  df$grade == "C" ,3,
+  df$grade == "D" ,4,
+  df$grade == "E" ,5,
+  df$grade == "F" ,6,
+  df$grade == "G" ,7)
+unique(df$grade_num)
+```
+
+```{r}
+unique(df$sub_grade)
+df$sub_grade_num = fcase(
+  df$sub_grade == "A1" ,11,
+  df$sub_grade == "B1" ,21,
+  df$sub_grade == "C1" ,31,
+  df$sub_grade == "D1" ,41,
+  df$sub_grade == "E1" ,51,
+  df$sub_grade == "F1" ,61,
+  df$sub_grade == "G1" ,71,
+  df$sub_grade == "A2" ,12,
+  df$sub_grade == "B2" ,22,
+  df$sub_grade == "C2" ,32,
+  df$sub_grade == "D2" ,42,
+  df$sub_grade == "E2" ,52,
+  df$sub_grade == "F2" ,62,
+  df$sub_grade == "G2" ,72,
+  df$sub_grade == "A3" ,13,
+  df$sub_grade == "B3" ,23,
+  df$sub_grade == "C3" ,33,
+  df$sub_grade == "D3" ,43,
+  df$sub_grade == "E3" ,53,
+  df$sub_grade == "F3" ,63,
+  df$sub_grade == "G3" ,73,
+  df$sub_grade == "A4" ,14,
+  df$sub_grade == "B4" ,24,
+  df$sub_grade == "C4" ,34,
+  df$sub_grade == "D4" ,44,
+  df$sub_grade == "E4" ,54,
+  df$sub_grade == "F4" ,64,
+  df$sub_grade == "G4" ,74,
+  df$sub_grade == "A5" ,15,
+  df$sub_grade == "B5" ,25,
+  df$sub_grade == "C5" ,35,
+  df$sub_grade == "D5" ,45,
+  df$sub_grade == "E5" ,55,
+  df$sub_grade == "F5" ,65,
+  df$sub_grade == "G5" ,75)
+unique(df$sub_grade_num)
+```
+
+```{r}
+df[, issue_d_year := substring(issue_d, 5,9)]
+df$issue_d_year = as.integer(df$issue_d_year)
+head(df[,issue_d_year])
+```
+
+```{r}
+df[df$loan_status=='Does not meet the credit policy. Status:Charged Off',]$loan_status = '*Charged off'
+df[df$loan_status=='Does not meet the credit policy. Status:Fully Paid',]$loan_status = '*Fully Paid'
+```
+
+
+```{r}
+df_target <- dcast(df, issue_d_year ~ loan_status,
+           length, 
+           value.var = "loan_status" )
+
+df_target
+```
+```{r}
+unique(df$loan_status)
+```
+
+
+```{r}
+df_target[, c("TOTAL","x") := list(`Fully Paid`  + `Charged Off` + `Current` +  + `Late (31-120 days)` +  `In Grace Period` + `Late (16-30 days)` + `*Fully Paid` + `*Charged off`   + `Issued`   , .I) ]
+df_target
+```
+
+```{r}
+df_target[, `Default %` := ((`*Charged off`+ `Default` + `Charged Off`) / TOTAL)]
+df_target[, `Not` := ( 1-`Default %`)]
+round(df_target[,c("issue_d_year","Default %","Not","TOTAL")],2)
+```
+#First Skim
+```{r}
+library(skimr)
+```
+
+```{r}
+#df_2 = df[,a,with = FALSE]
+df_2 = df
+df_2[,target := ifelse((loan_status=="Charged Off")|(loan_status=="Default")|(loan_status=="*Charged off"), 1, 0)]
+df_2 = df_2[,setdiff(names(df_2), "loan_status"),with = FALSE]
+
+```
+
+```{r}
+#Plazos
+unique(df_2$term)
+sum(df_2$term=="60 months")
+sum(df_2$term=="36 months")
+```
+
+```{r}
+b = df_2[df_2$issue_d_year>0,]
+print(cat(sum(b$target)/nrow(b),nrow(b)))
+```
+
+```{r}
+library(ggplot2)
+ggplot(df, aes(x=inq_last_12m)) +
+  facet_grid(target ~ .) +
+  geom_density()
+```
+
+```{r}
+dcast(df[df$recoveries>0,,], issue_d_year ~ loan_status,
+           length, 
+           value.var = "loan_status" )
+
+```
+
+```{r}
+set.seed(3)
+df_2$random = runif(nrow(df_2))
+head(df_2)
+```
+
+```{r}
+    #Filter rows
+df_2 = df_2[((df_2$issue_d_year>=2009) & (df_2$issue_d_year<=2012)) ,]
+```
+
+
+```{r}
+df_3 = df_2
+```
+
+
+```{r}
+selection = c('sub_grade_num','purpose','emp_length_num','target','grade_num','home_ownership','verification_status','term','initial_list_status','loan_amnt','int_rate','installment','annual_inc','dti','delinq_2yrs','inq_last_6mths','mths_since_last_delinq','mths_since_last_record','open_acc','pub_rec','revol_bal','revol_util','total_acc','mths_since_last_major_derog')
+#selection = setdiff(selection, c('funded_amnt', 'funded_amnt_inv','total_rec_prncp',"last_pymnt_amnt",    "total_pymnt", "total_pymnt_inv",    "total_rec_int"))
+selection
+```
+
+```{r}
+# selection = c('sub_grade','purpose','emp_length_num','target','grade','home_ownership','verification_status','term','initial_list_status','loan_amnt','int_rate','installment','annual_inc','dti','delinq_2yrs','inq_last_6mths','mths_since_last_delinq','mths_since_last_record','open_acc','pub_rec','revol_bal','revol_util','total_acc','mths_since_last_major_derog')
+# #selection = setdiff(selection, c('funded_amnt', 'funded_amnt_inv','total_rec_prncp',"last_pymnt_amnt",    "total_pymnt", "total_pymnt_inv",    "total_rec_int"))
+# selection
+```
+
+```{r}
+df_2 = df_2[
+
+  ,selection #Filter columns
+ ,with = FALSE]
+head(df_2)
+```
+
+# 3.1 Pantallazo del dataset
+
+```{r}
+nrow(df_2)
+```
+
+```{r}
+sum(df_2$target==1)
+sum(df_2$target==0)
+sum(df_2$target==1)/nrow(df_2)
+sum(df_2$target==0)/nrow(df_2)
+
+```
+
+```{r}
+library(skimr)
+
+my_skim <- skim_with(numeric = sfl(n_unique), append = TRUE)
+
+desc <- as.data.table(my_skim(df_2))
+View(desc)
+write.csv(desc,'skim_final.csv')
+```
+
+
+```{r}
+# Utilizado para linea de referencia
+
+changeCols <- colnames(df_2)[which(as.vector(df_2[,lapply(.SD, class)]) == "character")]
+
+df_2[,(changeCols):= lapply(.SD, as.factor), .SDcols = changeCols]
+
+changeCols2 <- colnames(df_2)[which(as.vector(df_2[,lapply(.SD, class)]) == "factor")]
+
+par(mfrow = c(2,2), col.axis = "white", col.lab = "white", tck = 0)
+for (variable in changeCols2) {
+  a = setDT(df_2)[,.N,by=c(variable,"target")]
+  setkeyv(a,variable)
+  b = setDT(df_2)[, .N,by=c(variable)]
+  b
+  setkeyv(b,variable)
+  
+  Result <- a[b, nomatch=0]
+  Result[,Proporción:=N/i.N,]
+  Result
+  
+  print(ggplot(Result, aes(x=get(variable), y=Proporción, fill = as.factor(target))) +
+    geom_bar(stat="identity") +  
+    geom_hline(yintercept = 0.1485, linetype="dotted")+
+    xlab("Clases")+
+    guides(fill=guide_legend(title="Target"))+
+    ggtitle(paste("Proporcion de Impagos por categoría:",variable)))
+}
+```
+
+changeCols3 <- colnames(df_2)[which(as.vector(df_2[,lapply(.SD, class)]) == "numeric")]
+scaled_df = data.table(scale(df_2[,setdiff(c(changeCols3),"target"),with=FALSE]))
+scaled_df = cbind(scaled_df, df_2[,"target"])
+# do ?melt to see what other things it can do (you will surely need it)
+df.m <- melt(scaled_df[,setdiff(c(changeCols3),c("sub_grade_num","grade_num")),with=FALSE], id.var = "target")
+
+#df_2[,(changeCols):= lapply(.SD, as.factor), .SDcols = changeCols]
+
+p <- ggplot(data = df.m, aes(x=variable, y=value))
+p <- p + geom_boxplot(aes(fill = as.factor(target)))
+# if you want color for points replace group with colour=Label
+p <- p + geom_point(aes(y=value, group=as.factor(target)), position = position_dodge(width=0.75))
+p <- p + facet_wrap( ~ variable, scales="free")
+p <- p + xlab("") + ylab("Variable Estandarizada") + ggtitle("Boxplot variables numéricas por Target")
+p <- p + guides(fill=guide_legend(title="Target"))
+p
+
+```{r}
+changeCols3 <- colnames(df_2)[which(as.vector(df_2[,lapply(.SD, class)]) == "numeric")]
+scaled_df = data.table(scale(df_2[,setdiff(c(changeCols3),"target"),with=FALSE]))
+scaled_df = cbind(scaled_df, df_2[,"target"])
+# do ?melt to see what other things it can do (you will surely need it)
+df.m <- melt(scaled_df[,setdiff(c(changeCols3),c("sub_grade_num","grade_num")),with=FALSE], id.var = "target")
+
+#df_2[,(changeCols):= lapply(.SD, as.factor), .SDcols = changeCols]
+
+p <- ggplot(data = df.m, aes(x=variable, y=value))
+p <- p + geom_boxplot(aes(fill = as.factor(target)))
+# if you want color for points replace group with colour=Label
+p <- p + geom_point(aes(y=value, group=as.factor(target)), position = position_dodge(width=0.75))
+p <- p + facet_wrap( ~ variable, scales="free")
+p <- p + xlab("") + ylab("Variable Estandarizada") + ggtitle("Boxplot variables numéricas por Target")
+p <- p + guides(fill=guide_legend(title="Target"))
+p
+```
+
+
+# Variables numéricas
+```{r , results='asis', echo=FALSE}
+
+# changeCols3 <- colnames(df_2)[which(as.vector(df_2[,lapply(.SD, class)]) == "numeric")]
+# scaled_df = data.table(scale(df_2[,setdiff(c(changeCols3),"target"),with=FALSE]))
+# scaled_df = cbind(scaled_df, df_2[,"target"])
+# # do ?melt to see what other things it can do (you will surely need it)
+# df.m <- melt(scaled_df[,setdiff(c(changeCols3),c("sub_grade_num","grade_num")),with=FALSE], id.var = "target")
+# 
+# #df_2[,(changeCols):= lapply(.SD, as.factor), .SDcols = changeCols]
+# 
+# p <- ggplot(data = df.m, aes(x=variable, y=value))
+# p <- p + geom_boxplot(aes(fill = as.factor(target)))
+# # if you want color for points replace group with colour=Label
+# p <- p + geom_point(aes(y=value, group=as.factor(target)), position = position_dodge(width=0.75))
+# p <- p + facet_wrap( ~ variable, scales="free")
+# p <- p + xlab("") + ylab("Variable Estandarizada") + ggtitle("Boxplot variables numéricas por Target")
+# p <- p + guides(fill=guide_legend(title="Target"))
+# p
+```
+
+# Faltantes
+```{r}
+
+desc$missing = 1-desc$complete_rate
+desc = desc[order(desc$missing),,]
+print(ggplot(desc, aes(x=reorder(skim_variable, missing), y=(missing)
+#                       , fill = as.factor(target)
+                       )) +
+
+    geom_bar(stat="identity") + 
+    coord_flip(ylim = c(0, 1.09))+
+    geom_text(aes(label=paste(round(missing,3)*100,"%"), hjust=-0.1))+
+    theme_minimal()+
+    xlab("Variables") + ylab("Proporción") + 
+    ggtitle(paste("Proporción de Faltantes")))
+```
+
+
+# Correlation
+
+```{r}
+# numeric <- colnames(df_filtered)[which(as.vector(df_filtered[,lapply(.SD, class)]) == "numeric")]
+# numeric
+# 
+# View(cor(df_filtered[,numeric,with=FALSE], method = 'spearman'))
+# a=cor(df_filtered[,numeric,with=FALSE], method = 'spearman')
+
+
+```
+
+
+
+```{r}
+selection = c('sub_grade','purpose','emp_length_num','target','grade','home_ownership','verification_status','term','initial_list_status','loan_amnt','int_rate','installment','annual_inc','dti','delinq_2yrs','inq_last_6mths','mths_since_last_delinq','mths_since_last_record','open_acc','pub_rec','revol_bal','revol_util','total_acc','mths_since_last_major_derog')
+#selection = setdiff(selection, c('funded_amnt', 'funded_amnt_inv','total_rec_prncp',"last_pymnt_amnt",    "total_pymnt", "total_pymnt_inv",    "total_rec_int"))
+selection
+```
+
+```{r}
+df_2 = df_3[,selection,with=FALSE]
+names(df_2)
+```
+
+```{r}
+library(caret)
+set.seed(2610)
+train_index <- createDataPartition(df_2$target, p = .8, list = FALSE)
+
+require("ranger")
+require("randomForest")
+
+
+changeCols <- colnames(df_2)[which(as.vector(df_2[,lapply(.SD, class)]) == "character")]
+
+df_2[,(changeCols):= lapply(.SD, as.factor), .SDcols = changeCols]
+df_2  <-  randomForest::na.roughfix( df_2 )
+
+df_filtered <- df_2[ train_index,]
+df_filtered_test  <- df_2[-train_index,]
+
+sum(df_filtered$target)/nrow(df_filtered)
+sum(df_filtered_test$target)/nrow(df_filtered_test)
+
+```
+
+
+```{r}
+library(splitTools)
+splits = create_folds(df_filtered$target,k=10,type = "stratified", shuffle = TRUE  ,seed = 37981)
+library(pROC)
+```
+
+
+#xz
+```{r}
+library(pROC)
+library(rpart)
+
+metrics_array = as.numeric()
+
+for (i in 1:10) {
+  
+  train = df_filtered[unlist(splits[i]),]
+  test = df_filtered[-unlist(splits[i]),]
+  
+  modelo   <-  rpart( target ~ .,   data = train)
+  
+  predictions <- predict(modelo, test)
+  
+  roc_obj <- roc(test$target, predictions)
+  
+  metric = auc(roc_obj)
+  
+  metrics_array = c(metrics_array,metric)
+  
+  
+}
+
+paste("El promedio del AUC:", round(mean(metrics_array),3))
+paste("El desvío del AUC:", round(sd(metrics_array),3))
+
+#as.data.frame(modelo$variable.importance)
+```
+
+```{r}
+library(rpart)
+
+modelo   <-  rpart( target ~ .,   data = df_filtered, cp=0,  xval=10 )
+
+```
+
+```{r}
+modelo$cptable
+```
+
+
+```{r}
+names(modelo$variable.importance)
+```
+```{r}
+modelo$variable.importance
+```
+
+```{r}
+library(ggplot2)
+ggplot(df_filtered, aes(x=(loan_amnt                     ))) +
+  facet_grid(target ~ .) +
+  geom_density()
+```
+
+
+```{r}
+predictions <- predict(modelo, df_filtered)
+```
+
+```{r}
+modelo$frame
+```
+
+
+```{r}
+library(pROC)
+roc_obj <- roc(df_filtered$target, predictions)
+auc(roc_obj)
+roc_df <- data.frame(
+  TPR=rev(roc_obj$sensitivities), 
+  FPR=rev(1 - roc_obj$specificities))
+```
+
+```{r}
+rectangle <- function(x, y, width, height, density=12, angle=-45, ...) 
+  polygon(c(x,x,x+width,x+width), c(y,y+height,y+height,y), 
+          density=density, angle=angle, ...)
+roc_df <- transform(roc_df, 
+  dFPR = c(diff(FPR), 0),
+  dTPR = c(diff(TPR), 0))
+plot(0:10/10, 0:10/10, type='n', xlab="FPR", ylab="TPR")
+abline(h=0:10/10, col="lightblue")
+abline(v=0:10/10, col="lightblue")
+with(roc_df, {
+  mapply(rectangle, x=FPR, y=0,   
+         width=dFPR, height=TPR, col="green", lwd=2)
+  mapply(rectangle, x=FPR, y=TPR, 
+         width=dFPR, height=dTPR, col="blue", lwd=2)
+  lines(FPR, TPR, type='b', lwd=3, col="red")
+})
+```
+
+
+```{r}
+predictions <- predict(modelo, df_filtered_test)
+```
+
+```{r}
+modelo$frame
+```
+
+
+
+```{r}
+library(pROC)
+roc_obj <- roc(df_filtered_test$target, predictions)
+auc(roc_obj)
+roc_df <- data.frame(
+  TPR=rev(roc_obj$sensitivities), 
+  FPR=rev(1 - roc_obj$specificities))
+```
+
+```{r}
+rectangle <- function(x, y, width, height, density=12, angle=-45, ...) 
+  polygon(c(x,x,x+width,x+width), c(y,y+height,y+height,y), 
+          density=density, angle=angle, ...)
+roc_df <- transform(roc_df, 
+  dFPR = c(diff(FPR), 0),
+  dTPR = c(diff(TPR), 0))
+plot(0:10/10, 0:10/10, type='n', xlab="FPR", ylab="TPR")
+abline(h=0:10/10, col="lightblue")
+abline(v=0:10/10, col="lightblue")
+with(roc_df, {
+  mapply(rectangle, x=FPR, y=0,   
+         width=dFPR, height=TPR, col="green", lwd=2)
+  mapply(rectangle, x=FPR, y=TPR, 
+         width=dFPR, height=dTPR, col="blue", lwd=2)
+  lines(FPR, TPR, type='b', lwd=3, col="red")
+})
+```
+
+# Random Forest
+
+```{r}
+require("ranger")
+require("randomForest")
+
+
+changeCols <- colnames(df_2)[which(as.vector(df_2[,lapply(.SD, class)]) == "character")]
+
+df_2[,(changeCols):= lapply(.SD, as.factor), .SDcols = changeCols]
+df_2  <-  randomForest::na.roughfix( df_2 )
+```
+
+```{r}
+
+changeCols <- colnames(df_filtered)[which(as.vector(df_filtered[,lapply(.SD, class)]) == "character")]
+
+df_filtered[,(changeCols):= lapply(.SD, as.factor), .SDcols = changeCols]
+df_filtered  <-  randomForest::na.roughfix( df_filtered )
+
+metrics_array_2 = as.numeric()
+
+for (i in 1:10) {
+  
+  train = df_filtered[unlist(splits[i]),]
+  test = df_filtered[-unlist(splits[i]),]
+  
+  modelo  <- ranger( formula= "target ~ .", 
+                     data= train,
+                     probability=TRUE,  
+                   importance= "impurity"
+                 )
+  
+  predictions <- predict(modelo, test)$predictions[,2]
+  
+  roc_obj <- roc(test$target, predictions)
+  
+  metric = auc(roc_obj)
+  
+  metrics_array_2 = c(metrics_array_2,metric)
+  
+  
+}
+
+
+```
+
+```{r}
+metrics_array_2 
+```
+
+
+```{r}
+# set.seed(29)
+# df_2$random = runif(nrow(df_2))
+# head(df_2)
+```
+
+```{r}
+df_filtered <- df_2[ train.index,]
+df_filtered_test  <- df_2[-train.index,]
+```
+
+```{r}
+# df_filtered_test = df_2[
+#     #Filter rows
+#   (
+#     (df_2$issue_d_year>=2009) & (df_2$issue_d_year<=2012) & 
+#      df_2$random<=0.2)
+#   ,#Filter columns
+# selection, with = FALSE]
+```
+
+```{r}
+modelo  <- ranger( formula= "target ~ .",
+                   data= df_filtered,  #aqui considero los 6 meses de 201906 a 201912
+                   probability=   TRUE,  #para que devuelva las probabilidades
+                   importance= "impurity"
+                 )
+```
+
+```{r}
+View(modelo$variable.importance)
+as.data.frame(modelo$variable.importance)
+```
+
+```{r}
+unique(df_2[df_2$pymnt_plan=='y',]$target)
+sum(df_2[df_2$pymnt_plan=='n',]$target)/nrow(df_2[df_2$pymnt_plan=='n',])
+```
+
+```{r}
+variable_a = 'annual_inc'
+
+ggplot(df_filtered,aes(as.factor(target),get(variable_a)))+geom_boxplot()
+  # +coord_cartesian(ylim=c(0,100)
+
+sum(df_filtered[,variable_a,with=FALSE]>0)
+sum(df_filtered[target==1,variable_a,with=FALSE]>0)
+sum(df_filtered[target==0,variable_a,with=FALSE]>0)                  
+```
+
+```{r}
+modelo  <- ranger( formula= "target ~ .",
+                   data= df_filtered,  #aqui considero los 6 meses de 201906 a 201912
+                   probability=   TRUE  #para que devuelva las probabilidades
+                   
+                 )
+```
+
+```{r}
+predictions <- predict(modelo, df_filtered)$predictions[,2]
+```
+
+```{r}
+library(pROC)
+roc_obj <- roc(df_filtered$target, predictions)
+auc(roc_obj)
+roc_df <- data.frame(
+  TPR=rev(roc_obj$sensitivities), 
+  FPR=rev(1 - roc_obj$specificities))
+```
+
+```{r}
+# rectangle <- function(x, y, width, height, density=12, angle=-45, ...) 
+#   polygon(c(x,x,x+width,x+width), c(y,y+height,y+height,y), 
+#           density=density, angle=angle, ...)
+# roc_df <- transform(roc_df, 
+#   dFPR = c(diff(FPR), 0),
+#   dTPR = c(diff(TPR), 0))
+# plot(0:10/10, 0:10/10, type='n', xlab="FPR", ylab="TPR")
+# abline(h=0:10/10, col="lightblue")
+# abline(v=0:10/10, col="lightblue")
+# with(roc_df, {
+#   mapply(rectangle, x=FPR, y=0,   
+#          width=dFPR, height=TPR, col="green", lwd=2)
+#   mapply(rectangle, x=FPR, y=TPR, 
+#          width=dFPR, height=dTPR, col="blue", lwd=2)
+#   lines(FPR, TPR, type='b', lwd=3, col="red")
+# })
+```
+
+
+```{r}
+predictions <- predict(modelo, df_filtered_test)$predictions[,2]
+```
+
+
+```{r}
+library(pROC)
+roc_obj <- roc(df_filtered_test$target, predictions)
+auc(roc_obj)
+roc_df <- data.frame(
+  TPR=rev(roc_obj$sensitivities), 
+  FPR=rev(1 - roc_obj$specificities))
+```
+
+```{r}
+# rectangle <- function(x, y, width, height, density=12, angle=-45, ...) 
+#   polygon(c(x,x,x+width,x+width), c(y,y+height,y+height,y), 
+#           density=density, angle=angle, ...)
+# roc_df <- transform(roc_df, 
+#   dFPR = c(diff(FPR), 0),
+#   dTPR = c(diff(TPR), 0))
+# plot(0:10/10, 0:10/10, type='n', xlab="FPR", ylab="TPR")
+# abline(h=0:10/10, col="lightblue")
+# abline(v=0:10/10, col="lightblue")
+# with(roc_df, {
+#   mapply(rectangle, x=FPR, y=0,   
+#          width=dFPR, height=TPR, col="green", lwd=2)
+#   mapply(rectangle, x=FPR, y=TPR, 
+#          width=dFPR, height=dTPR, col="blue", lwd=2)
+#   lines(FPR, TPR, type='b', lwd=3, col="red")
+# })
+```
+
+#LGBM
+
+```{r}
+require("lightgbm")
+```
+
+```{r}
+#los campos que se van a utilizar
+campos_buenos  <- setdiff(  colnames(df_filtered) ,  c("target") )
+```
+
+
+```{r}
+dgeneracion  <- lgb.Dataset( data= data.matrix(  df_filtered[ , campos_buenos, with=FALSE]),
+                             label= df_filtered$target,
+                             free_raw_data= FALSE )
+```
+
+```{r}
+#genero el modelo
+modelo  <- lgb.train( data= dgeneracion,
+                      objective= "binary",
+                      metric = 'auc',
+                      nrounds = 1000,
+                      boost_from_average= FALSE
+                    )
+```
+
+```{r}
+predictions  <- predict( modelo, 
+                               data.matrix( df_filtered_test[, campos_buenos, with=FALSE ])                                 )
+
+predictions[1:2]
+```
+
+```{r}
+require("lightgbm")
+#los campos que se van a utilizar
+campos_buenos  <- setdiff(  colnames(df_filtered) ,  c("target") )
+
+metrics_array_3 = as.numeric()
+
+for (i in 1:10) {
+  
+  train = df_filtered[unlist(splits[i]),]
+  dgeneracion  <- lgb.Dataset( data= data.matrix(  train[ , campos_buenos, with=FALSE]),
+                             label= train$target,
+                             free_raw_data= FALSE )
+  
+  test = df_filtered[-unlist(splits[i]), ]
+  test2 = data.matrix(test[, campos_buenos, with=FALSE ])
+  
+  modelo  <- lgb.train( data= dgeneracion,
+                      objective= "binary",
+                      metric = 'auc',
+                      boost_from_average= TRUE
+                    )
+  
+  predictions <- predict(modelo, test2)
+  
+  roc_obj <- roc(test$target, predictions)
+  
+  metric = auc(roc_obj)
+  
+  metrics_array_3 = c(metrics_array_3,metric)
+  
+  
+}
+
+paste("El promedio del AUC:", round(mean(metrics_array_3),3))
+paste("El desvío del AUC:", round(sd(metrics_array_3),3))
+
+```
+
+```{r}
+(metrics_array_3)
+```
+
+
+```{r}
+library(pROC)
+roc_obj <- roc(df_filtered_test$target, predictions)
+auc(roc_obj)
+roc_df <- data.frame(
+  TPR=rev(roc_obj$sensitivities), 
+  FPR=rev(1 - roc_obj$specificities))
+```
+
+```{r}
+a = lgb.importance(modelo)
+View(a)
+a$Feature
+```
+
+
+```{r}
+df_last_year = df_2[
+    #Filter rows
+  (
+    (df_2$issue_d_year==2015))
+  ,#Filter columns
+selection, with = FALSE]
+```
+
+
+```{r}
+predictions  <- predict( modelo, 
+                               data.matrix( df_last_year[, campos_buenos, with=FALSE ])                                 )
+
+predictions[1:2]
+```
+
+```{r}
+library(pROC)
+roc_obj <- roc(df_last_year$target, predictions)
+auc(roc_obj)
+roc_df <- data.frame(
+  TPR=rev(roc_obj$sensitivities), 
+  FPR=rev(1 - roc_obj$specificities))
+```
+
+# Regresión logística, CV
+```{r}
+prueba_2 = df_filtered
+require(glmnet)
+
+# Vector con los salarios
+train_y = prueba_2$target
+# Matriz con los regresores
+train_x = model.matrix(target~., data = prueba_2)
+
+modelo_cv = cv.glmnet(train_x, train_y,
+standardize = TRUE,
+intercept = TRUE,
+standardize.response = FALSE, alpha=1, family="binomial")
+
+summary(modelo_cv)
+```
+
+```{r}
+plot(modelo_cv)
+```
+
+```{r}
+modelo_cv
+```
+
+```{r}
+modelo_cv$lambda.min
+modelo_cv$lambda.1se
+```
+
+```{r}
+library("pROC")
+library("ROCR")
+
+# Selección lambda óptimo
+lasso_lambda_opt = modelo_cv$lambda.min
+
+metrics_array_4 = as.numeric()
+f1_array = as.numeric()
+p_corte_array = as.numeric()
+
+for (i in 1:10) {
+  
+  train = df_filtered[unlist(splits[i]),]
+  train_x = model.matrix(target~., data = train)
+  train_y = train$target
+  
+  test = df_filtered[-unlist(splits[i]), ]
+  test2 = model.matrix(target~., data = test)
+  
+  lasso_opt = glmnet(train_x, train_y,
+  standardize = TRUE,
+  intercept = TRUE,
+  standardize.response = FALSE, alpha=1,
+  lambda = lasso_lambda_opt, 
+  family="binomial"
+  )
+  
+  predictions = predict(lasso_opt, test2, type = 'response')
+  
+  roc_obj <- roc(test$target, predictions)
+  
+  metric = auc(roc_obj)
+  
+  metrics_array_4 = c(metrics_array_4,metric)
+  
+  # Prob de corte en base a F1
+  
+  pred <- prediction(predictions, test$target)
+  
+  # Barrido sobre F1 - Score           
+  RP.perf <- performance(pred, "f")
+  
+  # Probabilidad de corte
+  p_corte = RP.perf@x.values[[1]][which.max(RP.perf@y.values[[1]])]
+  p_corte_array = c(p_corte_array, p_corte)
+  
+  # F1 - Score
+  f1 = RP.perf@y.values[[1]][RP.perf@x.values[[1]]<0.163][1]
+  f1_array = c(f1_array, f1)
+  
+}
+
+paste("El promedio del AUC:", round(mean(metrics_array_4),3))
+paste("El desvío del AUC:", round(sd(metrics_array_4),3))
+
+paste("El promedio del F1:", round(mean(f1_array),3))
+paste("El desvío del F1:", round(sd(f1_array),3))
+
+paste("El promedio del umbral:", round(mean(p_corte_array),3))
+paste("El desvío del umbral:", round(sd(p_corte_array),3))
+
+plot(RP.perf)
+```
+```{r}
+metrics_array_4
+```
+
+
+# Corrida modelo óptimo
+```{r}
+lasso_lambda = modelo_cv$lambda.min
+
+train = df_filtered
+train_x = model.matrix(target~., data = train)
+train_y = train$target
+
+test = df_filtered_test
+test2 = model.matrix(target~., data = test)
+
+lasso_opt = glmnet(train_x, train_y,
+standardize = TRUE,
+intercept = TRUE,
+standardize.response = FALSE, alpha=1,
+lambda = lasso_lambda, 
+family="binomial"
+)
+
+predictions = predict(lasso_opt, test2, type = 'response')
+
+roc_obj <- roc(test$target, predictions)
+
+metric = auc(roc_obj)
+metric
+
+# Prob de corte en base a F1
+  
+pred <- prediction(predictions, test$target)
+
+# Barrido sobre F1 - Score           
+RP.perf <- performance(pred, "f")
+
+# Probabilidad de corte
+p_corte = RP.perf@x.values[[1]][which.max(RP.perf@y.values[[1]])]
+p_corte_array = c(p_corte_array, p_corte)
+
+# F1 - Score
+f1 = RP.perf@y.values[[1]][RP.perf@x.values[[1]]<0.163][1]
+f1
+f1_array = c(f1_array, f1)
+
+
+#metrics_array_5 = c(metrics_array_5,metric)
+```
+
+```{r}
+# Barrido sobre F1 - Score           
+RP.perf <- performance(pred, "npv")
+# F1 - Score
+f1 = RP.perf@y.values[[1]][RP.perf@x.values[[1]]<0.163][1]
+f1
+```
+
+
+```{r}
+roc_df <- data.frame(
+  TPR=rev(roc_obj$sensitivities), 
+  FPR=rev(1 - roc_obj$specificities))
+
+rectangle <- function(x, y, width, height, density=12, angle=-45, ...) 
+  polygon(c(x,x,x+width,x+width), c(y,y+height,y+height,y), 
+          density=density, angle=angle, ...)
+roc_df <- transform(roc_df, 
+  dFPR = c(diff(FPR), 0),
+  dTPR = c(diff(TPR), 0))
+plot(0:10/10, 0:10/10, type='n', xlab="FPR", ylab="TPR")
+abline(h=0:10/10, col="lightblue")
+abline(v=0:10/10, col="lightblue")
+with(roc_df, {
+  mapply(rectangle, x=FPR, y=0,   
+         width=dFPR, height=TPR, col="green", lwd=2)
+  mapply(rectangle, x=FPR, y=TPR, 
+         width=dFPR, height=dTPR, col="blue", lwd=2)
+  lines(FPR, TPR, type='b', lwd=3, col="red")
+})
+
+```
+
+
+```{r}
+# Selección lambda óptimo
+lasso_lambda = modelo_cv$lambda.1se
+
+metrics_array_5 = as.numeric()
+
+for (i in 1:10) {
+  
+  train = df_filtered[unlist(splits[i]),]
+  train_x = model.matrix(target~., data = train)
+  train_y = train$target
+  
+  test = df_filtered[-unlist(splits[i]), ]
+  test2 = model.matrix(target~., data = test)
+  
+  lasso_opt = glmnet(train_x, train_y,
+  standardize = TRUE,
+  intercept = TRUE,
+  standardize.response = FALSE, alpha=1,
+  lambda = lasso_lambda_opt, 
+  family="binomial"
+  )
+  
+  predictions = predict(lasso_opt, test2, type = 'response')
+  
+  roc_obj <- roc(test$target, predictions)
+  
+  metric = auc(roc_obj)
+  
+  metrics_array_5 = c(metrics_array_5,metric)
+  
+  
+}
+
+paste("El promedio del AUC:", round(mean(metrics_array_5),3))
+paste("El desvío del AUC:", round(sd(metrics_array_5),3))
+
+```
+
+
+
+# Corrida modelo 1se
+```{r}
+lasso_lambda = modelo_cv$lambda.1se
+
+train = df_filtered
+train_x = model.matrix(target~., data = train)
+train_y = train$target
+
+test = df_filtered_test
+test2 = model.matrix(target~., data = test)
+
+lasso_opt = glmnet(train_x, train_y,
+standardize = TRUE,
+intercept = TRUE,
+standardize.response = FALSE, alpha=1,
+lambda = lasso_lambda, 
+family="binomial"
+)
+
+predictions = predict(lasso_opt, test2, type = 'response')
+
+roc_obj <- roc(test$target, predictions)
+
+metric = auc(roc_obj)
+metric
+
+```
+
+```{r}
+
+```
+
+
+```{r}
+# Selección lambda óptimo
+lasso_lambda_opt = modelo_cv$lambda.1se
+
+metrics_array_5 = as.numeric()
+f1_array = as.numeric()
+p_corte_array = as.numeric()
+
+
+for (i in 1:10) {
+  
+  train = df_filtered_prueba[unlist(splits[i]),]
+  train_x = model.matrix(target~., data = train)
+  train_y = train$target
+  
+  test = df_filtered_prueba[-unlist(splits[i]), ]
+  test2 = model.matrix(target~., data = test)
+  
+  lasso_opt = glmnet(train_x, train_y,
+  standardize = TRUE,
+  intercept = TRUE,
+  standardize.response = FALSE, alpha=1,
+  lambda = lasso_lambda_opt, 
+  family="binomial"
+  )
+  
+  predictions = predict(lasso_opt, test2, type = 'response')
+  
+  roc_obj <- roc(test$target, predictions)
+  
+  metric = auc(roc_obj)
+  
+  metrics_array_5 = c(metrics_array_5,metric)
+  
+  # Prob de corte en base a F1
+  
+  pred <- prediction(predictions, test$target)
+  
+  # Barrido sobre F1 - Score           
+  RP.perf <- performance(pred, "f")
+  
+  # Probabilidad de corte
+  p_corte = RP.perf@x.values[[1]][which.max(RP.perf@y.values[[1]])]
+  p_corte_array = c(p_corte_array, p_corte)
+  
+  # F1 - Score
+  f1 = RP.perf@y.values[[1]][which.max(RP.perf@y.values[[1]])]
+  f1_array = c(f1_array, f1)
+  
+}
+
+paste("El promedio del AUC:", round(mean(metrics_array_3),3))
+paste("El desvío del AUC:", round(sd(metrics_array_3),3))
+
+paste("El promedio del F1:", round(mean(f1_array),3))
+paste("El desvío del F1:", round(sd(f1_array),3))
+
+paste("El promedio del umbral:", round(mean(p_corte_array),3))
+paste("El desvío del umbral:", round(sd(p_corte_array),3))
+
+plot(RP.perf)
+```
+
+```{r}
+length(round(predictions,2))
+metrics_array_4
+```
+
+
+```{r}
+prueba_test_2 = one_hot(df_filtered_test)
+prueba_test_2
+```
+
+
+```{r}
+test_x = model.matrix(target~., data = prueba_test_2)
+colnames(test_x)
+predictions = predict(lasso_opt,test_x, type = 'response')
+
+
+```
+
+```{r}
+library(pROC)
+roc_obj <- roc(df_filtered_test$target, predictions)
+auc(roc_obj)
+roc_df <- data.frame(
+  TPR=rev(roc_obj$sensitivities), 
+  FPR=rev(1 - roc_obj$specificities))
+```
+
+```{r}
+# Selección lambda 1se
+lasso_lambda_opt = modelo_cv$lambda.min
+
+lasso_opt = glmnet(train_x, train_y,
+standardize = TRUE,
+intercept = TRUE,
+
+standardize.response = FALSE, alpha=1,
+lambda = modelo_cv$lambda.1se, 
+family="binomial",
+
+)
+
+# Salida estandar
+lasso_opt
+```
+
+```{r}
+test_x = model.matrix(target~., data = prueba_test_2)
+
+predictions = predict(lasso_opt,test_x, type = 'response')
+
+
+```
+
+```{r}
+library(pROC)
+roc_obj <- roc(df_filtered_test$target, predictions)
+auc(roc_obj)
+roc_df <- data.frame(
+  TPR=rev(roc_obj$sensitivities), 
+  FPR=rev(1 - roc_obj$specificities))
+```
+
+```{r}
+# Selección lambda 1se
+lasso_lambda_opt = modelo_cv$lambda.min
+
+lasso_opt = glmnet(train_x, train_y,
+standardize = TRUE,
+intercept = TRUE,
+
+standardize.response = FALSE, alpha=1,
+lambda = 0.007, 
+family="binomial",
+
+)
+
+# Salida estandar
+lasso_opt
+```
+
+```{r}
+test_x = model.matrix(target~., data = prueba_test_2)
+
+predictions = predict(lasso_opt,test_x, type = 'response')
+
+
+```
+
+```{r}
+library(pROC)
+roc_obj <- roc(df_filtered_test$target, predictions)
+auc(roc_obj)
+roc_df <- data.frame(
+  TPR=rev(roc_obj$sensitivities), 
+  FPR=rev(1 - roc_obj$specificities))
+```
+
+
+# BO - Bayesian Optimization
+
+```{r}
+#paquetes necesarios para la Bayesian Optimization
+require("DiceKriging")
+require("mlrMBO")
+
+kexperimento <-  "5"   #cambiar esto en cada corrida !
+kBO_iter    <-  500  #cantidad de iteraciones de la Optimizacion Bayesiana
+ksalida     <-  paste0("./lightgbm_BO_", kexperimento, ".txt" )
+kbayesiana  <-  paste0("./lightgbm_BO_", kexperimento, ".RDATA" )
+
+```
+
+```{r}
+#funcion que va a optimizar la Bayesian Optimization
+estimar_lightgbm <- function( x)
+{
+  set.seed( 37981 )  # para que siempre me de el mismo resultado
+  metrics_array_cv <<- as.numeric()
+  for (i in 1:10) {
+  
+  train = df_filtered[unlist(splits[i]),]
+  dgeneracion  <- lgb.Dataset( data= data.matrix(  train[ , campos_buenos, with=FALSE]),
+                             label= train$target,
+                             free_raw_data= FALSE )
+  
+  test = df_filtered[-unlist(splits[i]), ]
+  test2 = data.matrix(test[, campos_buenos, with=FALSE ])
+  
+  modelo <-  lgb.train(data= dgeneracion,
+                       objective= "binary",  #la clase es binaria
+                       # eval= fganancia_logistic_lightgbm,  #esta es la fuciona optimizar
+                       # valids= list( valid= test2),
+                       metric= "auc",
+                       # metric= "custom",  #ATENCION   tremendamente importante
+                       boost_from_average= TRUE,
+                       num_iterations=  100,
+                       # num_iterations=  x$pnum_iterations,  #un numero muy grande
+                       # early_stopping_rounds= as.integer(10 + 5/x$plearning_rate),
+                       learning_rate= x$plearning_rate,
+                       # feature_fraction= x$pfeature_fraction,
+                       # bagging_fraction =  x$pbagging_fraction,
+                       # num_leaves=  x$pnum_leaves,
+                       # lambda_l1= x$plambda_l1,
+                       # lambda_l2= x$plambda_l2,
+                       # # max_bin= 31,
+                       verbosity= -1,
+                       verbose= -1
+                      )
+  
+  predictions <- predict(modelo, test2)
+  
+  roc_obj <- roc(test$target, predictions)
+  
+  metric = auc(roc_obj)
+  
+  metrics_array_cv = c(metrics_array_3,metric)
+  
+  AUC_avg = mean(metrics_array_cv)
+ 
+}
+
+
+  return( AUC_avg )
+}
+
+
+```
+
+```{r}
+#Aqui comienza la configuracion de la Bayesian Optimization
+# Start the clock!
+ptm <- proc.time()
+
+configureMlr(show.learner.output = FALSE)
+
+funcion_optimizar <-  estimar_lightgbm  #esta funcion se debe construir
+
+#configuro la busqueda bayesiana,  los hiperparametros que se van a optimizar
+#por favor, no desesperarse por lo complejo
+obj.fun <- makeSingleObjectiveFunction(
+        name = "OptimBayesiana",  #un nombre que no tiene importancia
+        fn   = funcion_optimizar,  #aqui va la funcion que quiero optimizar
+        minimize= FALSE,  #quiero maximizar la ganancia
+        par.set = makeParamSet(
+            makeNumericParam("plearning_rate",    lower=  0.01 , upper=    0.2)
+            ,makeIntegerParam("pnum_iterations",  lower=  50L   , upper= 200),
+            makeIntegerParam("pnum_leaves",       lower=  8L   , upper= 1023L),
+            makeNumericParam("pfeature_fraction", lower=  0.10 , upper=    1.0),
+            makeNumericParam("plambda_l1",        lower=  0.0  , upper=   10),
+            makeNumericParam("plambda_l2",        lower=  0.0  , upper=  100),
+            makeNumericParam("pbagging_fraction",        lower=  0.2  , upper=  1.0)
+        ),
+        has.simple.signature = FALSE,  #porque le pase los paratros con makeParamSet
+        noisy= TRUE
+        )
+
+ctrl  <-  makeMBOControl( save.on.disk.at.time = 600,  save.file.path = kbayesiana )
+ctrl  <-  setMBOControlTermination(ctrl, iters = kBO_iter )
+ctrl  <-  setMBOControlInfill(ctrl, crit = makeMBOInfillCritEI())
+ctrl$iters
+surr.km  <-  makeLearner("regr.km", predict.type= "se", covtype= "matern3_2", control = list(trace = FALSE))
+
+
+
+if(!file.exists(kbayesiana))
+{
+  #lanzo la busqueda bayesiana
+  run  <-  mbo(obj.fun, learner = surr.km, control = ctrl)
+} else {
+
+  #retoma el procesamiento en donde lo dejo
+  run <- mboContinue( kbayesiana ) 
+}
+
+
+#obtengo el pnrounds de la mejor corrida
+# tbl <- as.data.table(run$opt.path)
+# setorder( tbl, -y)
+# mejor_pnrounds <- tbl[ 1, pnum_iterations]
+
+write.csv(run$opt.path$env$path, "BO_results.csv")
+View(run$opt.path$env$path)
+cat( "AUC",          run$y, "\n",
+     "learning_rate",     run$x$plearning_rate, "\n",
+     "nrounds",           run$x$pnum_iterations, "\n",
+     "num_leaves",        run$x$pnum_leaves, "\n",
+     "feature_fraction",  run$x$pfeature_fraction, "\n",
+     "lambda_l1",         run$x$plambda_l1, "\n",
+     "lambda_l2",         run$x$plambda_l2, "\n",
+     "bagging_fraction",  run$x$pbagging_fraction, "\n",
+     file=ksalida,
+     sep="\t",
+     append=TRUE )
+run
+# Stop the clock
+proc.time() - ptm
+
+```
+
+```{r}
+run$opt.path$env$path
+run
+View(run)
+```
+
+#
+```{r}
+lasso_opt = glmnet(train_x, train_y,
+standardize = TRUE,
+intercept = TRUE,
+standardize.response = FALSE, alpha=1,
+lambda = lasso_lambda_opt, 
+family="binomial"
+)
+```
+
+
+```{r}
+prueba_test_2 = (df_filtered_test)
+prueba_test_2
+```
+
+
+```{r}
+test_x = model.matrix(target~., data = df_2)
+
+test_x
+colnames(train_x)
+colnames(test_x)
+
+predictions = predict(lasso_opt,test_x, type = 'response')
+
+
+```
+
+```{r}
+library(pROC)
+roc_obj <- roc(df_filtered_test$target, predictions)
+```
+
+
+
+# Calculo de métricas
+```{r}
+library(readxl)
+library(ggplot2)
+require(data.table)
+df_resultados = read_excel("Resultados_modelos_10_CV.xlsx")
+df_resultados = as.data.table(df_resultados)
+head(df_resultados)
+```
+
+```{r}
+quantile(df_resultados$`RL L1 (óptimo)`,0.25)
+```
+
+```{r}
+quantile(f1_array,0.2)
+min(f1_array)
+mean(f1_array)
+```
+
+```{r}
+df_resultados_long = melt(df_resultados, measure.vars = colnames(df_resultados))
+names(df_resultados_long) = c("Modelo","AUC")
+g <- ggplot(df_resultados_long, aes(Modelo, AUC))
+g + geom_boxplot(aes(fill=factor(Modelo))) + 
+  guides(fill=guide_legend(title="Modelo"))+
+  #theme(axis.text.x = element_text(angle=65, vjust=0.6)) + 
+  labs(title="Box plot", 
+       subtitle="Área bajo la curva ROC, para los distintos modelos",
+       
+       x="Modelo",
+       y="AUC")
+```
+
+
+```{r}
+
+library (ROCR)
+y <- test$target # logical array of positive / negative cases
+predictions_2 <- ifelse(predictions >= thresh, 1, 0) # array of predictions
+
+pred <- prediction(predictions, y)
+
+# F1 - Score           
+RP.perf <- performance(pred, "f")
+RP.perf@x.values[[1]][which.max(RP.perf@y.values[[1]])]
+
+
+
+```
+
+```{r}
+require("lightgbm")
+#los campos que se van a utilizar
+campos_buenos  <- setdiff(  colnames(df_filtered) ,  c("target") )
+
+metrics_array_3 = as.numeric()
+f1_array = as.numeric()
+p_corte_array = as.numeric()
+
+for (i in 1:10) {
+  
+  train = df_filtered[unlist(splits[i]),]
+  dgeneracion  <- lgb.Dataset( data= data.matrix(  train[ , campos_buenos, with=FALSE]),
+                             label= train$target,
+                             free_raw_data= FALSE )
+  
+  test = df_filtered[-unlist(splits[i]), ]
+  test2 = data.matrix(test[, campos_buenos, with=FALSE ])
+  
+  modelo  <- lgb.train( data= dgeneracion,
+                      objective= "binary",
+                      metric = 'auc',
+                      boost_from_average= TRUE
+                    )
+  
+  predictions <- predict(modelo, test2)
+  
+  roc_obj <- roc(test$target, predictions)
+  
+  metric = auc(roc_obj)
+  
+  metrics_array_3 = c(metrics_array_3,metric)
+  
+  # Prob de corte en base a F1
+  
+  pred <- prediction(predictions, test$target)
+  
+  # Barrido sobre F1 - Score           
+  RP.perf <- performance(pred, "f")
+  
+  # Probabilidad de corte
+  p_corte = RP.perf@x.values[[1]][which.max(RP.perf@y.values[[1]])]
+  p_corte_array = c(p_corte_array, p_corte)
+  
+  # F1 - Score
+  f1 = RP.perf@y.values[[1]][which.max(RP.perf@y.values[[1]])]
+  f1_array = c(f1_array, f1)
+  
+}
+
+paste("El promedio del AUC:", round(mean(metrics_array_3),3))
+paste("El desvío del AUC:", round(sd(metrics_array_3),3))
+
+paste("El promedio del F1:", round(mean(f1_array),3))
+paste("El desvío del F1:", round(sd(f1_array),3))
+
+paste("El promedio del umbral:", round(mean(p_corte_array),3))
+paste("El desvío del umbral:", round(sd(p_corte_array),3))
+
+plot(RP.perf)
+```
+
+# Predicciones sobre test Precision y recall
+```{r}
+predictions <- predict(modelo, test2)
+  
+roc_obj <- roc(test$target, predictions)
+
+metric = auc(roc_obj)
+
+metrics_array_3 = c(metrics_array_3,metric)
+
+# Prob de corte en base a F1
+
+pred <- prediction(predictions, test$target)
+
+# Barrido sobre F1 - Score           
+RP.perf <- performance(pred, "sens", "spec")
+
+plot(RP.perf)
+```
+
+# Curva ROC
+```{r}
+roc_obj <- roc(test$target, predictions)
+auc(roc_obj)
+roc_df <- data.frame(
+  TPR=rev(roc_obj$sensitivities), 
+  FPR=rev(1 - roc_obj$specificities))
+
+rectangle <- function(x, y, width, height, density=12, angle=-45, ...) 
+  polygon(c(x,x,x+width,x+width), c(y,y+height,y+height,y), 
+          density=density, angle=angle, ...)
+roc_df <- transform(roc_df, 
+  dFPR = c(diff(FPR), 0),
+  dTPR = c(diff(TPR), 0))
+plot(0:10/10, 0:10/10, type='n', xlab="FPR", ylab="TPR")
+abline(h=0:10/10, col="lightblue")
+abline(v=0:10/10, col="lightblue")
+with(roc_df, {
+  mapply(rectangle, x=FPR, y=0,   
+         width=dFPR, height=TPR, col="green", lwd=2)
+  mapply(rectangle, x=FPR, y=TPR, 
+         width=dFPR, height=dTPR, col="blue", lwd=2)
+  lines(FPR, TPR, type='b', lwd=3, col="red")
+})
+```
+
+```{r}
+a = lgb.importance(modelo)
+View(a)
+
+  plot(a$Gain)
+
+print(ggplot(a, aes(x=reorder(Feature, Gain), y=(Gain)
+#                       , fill = as.factor(target)
+                       )) +
+
+    geom_bar(stat="identity") + 
+    coord_flip(ylim = c(0, 0.4))+
+    geom_text(aes(label=paste(round(Gain,3)*100,"%"), hjust=-0.1))+
+    theme_minimal()+
+    xlab("Variables") + ylab("Importancia") + 
+    ggtitle(paste("Importancia de Variables")))
+```
+
+```{r}
+names(df_2)
+```
+
+  
